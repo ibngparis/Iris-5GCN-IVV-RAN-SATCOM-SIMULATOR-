@@ -1,0 +1,354 @@
+Parfait 
+On va construire un setup IVV complet en Docker pour tester les interfaces N1 / N2 / N3 entre un gNodeB simulé et un 5GC.
+On va utiliser :
+·	Core 5G : Open5GS
+·	gNB + UE : UERANSIM
+·	Monitoring : Prometheus + Grafana
+·	Capture : Wireshark / tcpdump
+ Architecture IVV Docker
+                   +----------------+                    |   UE (Sim)     |                    |  UERANSIM      |                    +--------+-------+                             |                            N1                             | +------------+     N2       |        N3        +------------+ |  gNB Sim   |------------->|----------------->|    UPF     | | UERANSIM   |              |                  |  Open5GS   | +------------+              |                  +------------+                             |                          +--+--+                          | AMF |                          +-----+ 
+ Étape 1 — Pré-requis
+Machine Ubuntu 22.04/24.04
+sudo apt update
+sudo apt install docker docker-compose -y
+sudo systemctl enable docker
+
+ Étape 2 — Structure projet
+ivv-5gc/
+ ├── docker-compose.yml
+ ├── open5gs/
+ ├── ueransim/
+ └── prometheus/
+
+ Étape 3 — docker-compose.yml
+Voici un setup fonctionnel minimal IVV :
+version: '3.8'  services:    mongo:     image: mongo:6     container_name: mongo     networks:       - 5gc-net    open5gs:     image: open5gs/open5gs:latest     container_name: open5gs     depends_on:       - mongo     networks:       - 5gc-net     ports:       - "38412:38412/sctp"   # N2       - "2152:2152/udp"      # N3    ueransim-gnb:     image: ghcr.io/aligungr/UERANSIM:latest     container_name: gnb     networks:       - 5gc-net     depends_on:       - open5gs     command: >       ./nr-gnb -c config/open5gs-gnb.yaml    ueransim-ue:     image: ghcr.io/aligungr/UERANSIM:latest     container_name: ue     networks:       - 5gc-net     depends_on:       - ueransim-gnb     command: >       ./nr-ue -c config/open5gs-ue.yaml  networks:   5gc-net:     driver: bridge 
+ Étape 4 — Configuration gNB
+open5gs-gnb.yaml
+mcc: "208"
+mnc: "93"
+
+amfConfigs:
+  - address: open5gs
+    port: 38412
+
+gtpIp: gnb
+
+ Étape 5 — Configuration UE
+open5gs-ue.yaml
+supi: "imsi-208930000000001" mcc: "208" mnc: "93"  key: "465B5CE8B199B49FAA5F0A2EE238A6BC" op: "E8ED289DEBA952E4283B54E88E6183CA"  gnbSearchList:   - gnb 
+ L’IMSI doit être ajouté dans Open5GS WebUI.
+ Étape 6 — Lancement
+docker-compose up -d
+docker logs gnb
+docker logs ue
+
+Tu dois voir :
+·	NG Setup OK
+·	Registration Accept
+·	PDU Session Establishment
+
+
+ Tests IVV à réaliser
+ Vérifier N2 (NGAP)
+sudo tcpdump -i any port 38412
+
+Tu dois voir :
+·	NGSetupRequest
+·	InitialUEMessage
+·	PDU Session Resource Setup
+ Vérifier N3 (GTP-U)
+sudo tcpdump -i any port 2152
+
+ Test trafic
+Depuis le conteneur UE :
+docker exec -it ue bash
+ping 8.8.8.8
+
+ Étape 7 — Monitoring (optionnel mais recommandé)
+Ajouter :
+·	Prometheus
+·	Grafana
+·	Node exporter
+Pour surveiller :
+·	Sessions actives
+·	CPU UPF
+·	GTP throughput
+·	Latence
+
+
+ Scénarios IVV avancés
+ Multi-gNB
+Dupliquer le service gnb :
+ueransim-gnb2:
+
+Tester :
+·	Load balancing AMF
+·	Slice selection
+ Multi-Slice
+Configurer S-NSSAI :
+slices:
+  - sst: 1
+    sd: 010203
+  - sst: 1
+    sd: 112233
+
+Tester :
+·	UPF différent par slice
+·	QoS différent
+ Test résilience
+docker stop open5gs
+docker start open5gs
+
+Observer :
+·	Re-registration
+·	SCTP re-establishment
+
+ Extension SATCOM / IRIS2
+Pour ton contexte NTN :
+Tu peux injecter délai satellite :
+tc qdisc add dev eth0 root netem delay 40ms
+ou
+tc qdisc add dev eth0 root netem delay 600ms
+
+Tester :
+·	Timeout NAS
+·	Retransmissions NGAP
+·	QoS adaptation
+ Résultat
+Tu obtiens :
+·	 Simulateur gNB
+·	 Simulateur UE
+·	 Core 5G
+·	 Test N1/N2/N3
+·	 Scénarios slicing
+·	 Test NTN delay
+Si tu veux, je peux maintenant te générer :
+·	 Version IVV opérateur (multi-AMF + multi-UPF + NRF + PCF explicite)
+·	 Version Docker avec CI/CD automatisé
+·	 Banc IVV spécial IRIS2 (Gov + Défense + Civil slices)
+·	 Version avec génération massive d’UE (1000+)
+Dis-moi ton niveau cible (labo R&D ou pré-production opérateur) 
+
+############################################################
+
+
+
+
+
+
+
+Parfait 
+On monte un setup IVV complet Kubernetes pour tester N1 / N2 / N3 avec :
+·	5GC : Open5GS
+·	gNB + UE : UERANSIM
+·	Monitoring : Prometheus + Grafana
+·	Injection latence NTN possible
+·	Multi-slice ready
+ Architecture IVV K8s
+                    +------------------+
+                    |   UE Pod         |
+                    |   (UERANSIM)     |
+                    +--------+---------+
+                             |
+                            N1
+                             |
++----------------+   N2      |      N3      +----------------+
+| gNB Pod        |---------->|------------->| UPF Pod        |
+| (UERANSIM)     |           |              | (Open5GS)      |
++----------------+           |              +----------------+
+                             |
+                          +--+--+
+                          | AMF |
+                          +-----+
+                             |
+                           MongoDB
+
+ Pré-requis cluster
+Cluster Kubernetes :
+·	k8s ≥ 1.26
+·	CNI : Calico ou Cilium
+·	MetalLB (si bare metal)
+·	Helm installé
+Si lab local :
+k3s ou kind
+
+ Namespace dédié
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ivv-5gc
+
+ MongoDB (backend Open5GS)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  namespace: ivv-5gc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo
+        image: mongo:6
+        ports:
+        - containerPort: 27017
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: ivv-5gc
+spec:
+  selector:
+    app: mongo
+  ports:
+  - port: 27017
+
+ Open5GS Core (AMF + SMF + UPF)
+ En prod on sépare chaque NF.
+Ici version IVV simplifiée.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open5gs
+  namespace: ivv-5gc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open5gs
+  template:
+    metadata:
+      labels:
+        app: open5gs
+    spec:
+      containers:
+      - name: open5gs
+        image: open5gs/open5gs:latest
+        ports:
+        - containerPort: 38412   # N2 SCTP
+        - containerPort: 2152    # N3 GTP-U
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: open5gs
+  namespace: ivv-5gc
+spec:
+  type: ClusterIP
+  selector:
+    app: open5gs
+  ports:
+  - name: n2
+    port: 38412
+    protocol: SCTP
+  - name: n3
+    port: 2152
+    protocol: UDP
+
+
+
+
+
+
+
+
+
+ gNB UERANSIM
+apiVersion: apps/v1 kind: Deployment metadata:   name: gnb   namespace: ivv-5gc spec:   replicas: 1   selector:     matchLabels:       app: gnb   template:     metadata:       labels:         app: gnb     spec:       containers:       - name: gnb         image: ghcr.io/aligungr/UERANSIM:latest         command: ["./nr-gnb"]         args: ["-c", "/config/gnb.yaml"]         volumeMounts:         - name: config           mountPath: /config       volumes:       - name: config         configMap:           name: gnb-config 
+ UE UERANSIM
+apiVersion: apps/v1 kind: Deployment metadata:   name: ue   namespace: ivv-5gc spec:   replicas: 1   selector:     matchLabels:       app: ue   template:     metadata:       labels:         app: ue     spec:       containers:       - name: ue         image: ghcr.io/aligungr/UERANSIM:latest         command: ["./nr-ue"]         args: ["-c", "/config/ue.yaml"]         volumeMounts:         - name: config           mountPath: /config       volumes:       - name: config         configMap:           name: ue-config 
+ ConfigMap gNB
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gnb-config
+  namespace: ivv-5gc
+data:
+  gnb.yaml: |
+    mcc: "208"
+    mnc: "93"
+    amfConfigs:
+      - address: open5gs
+        port: 38412
+    gtpIp: gnb
+
+ ConfigMap UE
+apiVersion: v1 kind: ConfigMap metadata:   name: ue-config   namespace: ivv-5gc data:   ue.yaml: |     supi: "imsi-208930000000001"     mcc: "208"     mnc: "93"     key: "465B5CE8B199B49FAA5F0A2EE238A6BC"     op: "E8ED289DEBA952E4283B54E88E6183CA"     gnbSearchList:       - gnb 
+ Déploiement
+kubectl apply -f namespace.yaml
+kubectl apply -f .
+kubectl get pods -n ivv-5gc
+
+Logs :
+kubectl logs -f deployment/gnb -n ivv-5gc
+kubectl logs -f deployment/ue -n ivv-5gc
+
+Tu dois voir :
+·	NGSetupRequest
+·	Registration Accept
+·	PDU Session Established
+ Tests IVV
+Vérifier N2
+kubectl exec -it <open5gs-pod> -n ivv-5gc -- tcpdump -i any port 38412
+Vérifier N3
+tcpdump -i any port 2152
+ Injection latence NTN (IRIS2 test)
+Dans pod gNB :
+tc qdisc add dev eth0 root netem delay 40ms
+Pour GEO :
+tc qdisc add dev eth0 root netem delay 600ms
+
+Tester :
+·	Timeouts NAS
+·	Retransmission NGAP
+·	QoS stability
+
+ Monitoring (Helm recommandé)
+Installer :
+helm install kube-prometheus-stack
+Surveiller :
+·	CPU UPF
+·	Sessions
+·	GTP throughput
+·	Latence RTT
+ Version IVV opérateur avancée
+En pré-production tu dois séparer :
+·	AMF (replicas 2)
+·	SMF (replicas 2)
+·	UPF (DaemonSet ou edge nodes)
+·	NRF
+·	PCF
+·	NSSF
+·	SCP (optionnel SBA)
+Avec :
+·	Anti-affinity rules
+·	HPA
+·	Persistent volumes
+·	Multi-slice S-NSSAI
+ Si tu veux aller plus loin
+Vu ton projet SATCOM + slicing Gov/Défense/Civil, je peux te générer :
+·	 Setup multi-UPF (par slice)
+·	 Architecture multi-cluster (Edge + Core)
+·	 CI/CD GitOps (ArgoCD)
+·	 Banc IVV massif (1000 UEs simulés)
+·	 Version Open5GS HA réelle (NRF + PCF séparés)
+Tu veux niveau :
+ Labo R&D
+ Pré-prod opérateur
+ Architecture IRIS2 multi-slice sécurisée
+Dis-moi et on monte ça proprement 
+
+
+

@@ -1,0 +1,170 @@
+Tu veux un simulateur IVV (Integration, Verification & Validation) pour tester un gNodeB vis-à-vis des interfaces du 5GCN — notamment N1 / N2 / N3 ?
+Je te détaille ça proprement dans un contexte 5GC (y compris NTN si besoin plus tard).
+ Interfaces concernées dans le 5GC
+Dans une architecture 3GPP standard :
+·	N1 → UE ↔ AMF (NAS signaling)
+·	N2 → gNB ↔ AMF (NGAP – contrôle)
+·	N3 → gNB ↔ UPF (GTP-U – user plane)
+Donc pour un IVV gNodeB, tu testes principalement :
+·	 N2 (NGAP/SCTP)
+·	 N3 (GTP-U)
+·	 N1 indirectement (via UE simulé)
+ Objectif d’un simulateur IVV gNodeB
+Un simulateur IVV doit pouvoir :
+1.	Émuler un gNB NG-RAN
+2.	Envoyer des messages NGAP vers l’AMF
+3.	Créer des tunnels GTP-U vers l’UPF
+4.	Simuler des UEs (ou interagir avec un simulateur UE)
+5.	Tester :
+o	Registration
+o	PDU Session Establishment
+o	Handover
+o	QoS / Slicing
+o	Failure scenarios
+ Solutions pour simuler un gNodeB
+OpenAirInterface (OAI)
+ Très utilisé en labo IVV
+Fonctions :
+·	gNB softwarisé
+·	Support N2 (NGAP)
+·	Support N3 (GTP-U)
+·	Compatible avec Open5GS / free5GC
+·	Mode simulation possible
+Utilisation typique :
+gNB (OAI)  ----N2---->  AMF
+gNB (OAI)  ----N3---->  UPF
+
+Idéal pour :
+·	Tests interopérabilité
+·	NTN research
+·	SATCOM integration
+srsRAN
+Alternative légère à OAI.
+Avantages :
+·	Déploiement simple
+·	Mode “no RF” pour IVV
+·	Bonne stabilité N2/N3
+UERANSIM
+Très intéressant pour IVV.
+Il peut :
+·	Simuler UE
+·	Simuler gNB
+·	Générer trafic N2 et N3
+·	Tester Registration + PDU Session
+Architecture typique :
+UERANSIM gNB ---- N2 ---- AMF
+UERANSIM gNB ---- N3 ---- UPF
+UERANSIM UE  ---- N1 ---- AMF (via gNB)
+
+ Très pratique si tu veux tester ton 5GCN sans vraie RAN.
+ Simulation détaillée des interfaces
+ N2 – NGAP (SCTP)
+Protocole :
+·	SCTP
+·	NGAP (ASN.1)
+Messages clés IVV :
+·	NGSetupRequest / Response
+·	InitialUEMessage
+·	PDU Session Resource Setup
+·	UE Context Release
+Test IVV typique :
+1.	gNB → NGSetupRequest
+2.	AMF → NGSetupResponse
+3.	UE attach
+4.	PDU session creation
+5.	Validation QoS flow
+ N3 – GTP-U
+Protocole :
+·	UDP 2152
+·	GTP-U encapsulation
+Test IVV :
+1.	Création TEID
+2.	Validation UL/DL
+3.	Test débit
+4.	Test QoS
+5.	Test perte de paquets
+
+
+Tu peux utiliser :
+·	Wireshark
+·	TRex
+·	iPerf
+ N1 – NAS
+Indirectement simulé via UE.
+Messages :
+·	Registration Request
+·	Authentication
+·	Security Mode
+·	PDU Session Establishment
+ Si tu es en contexte IRIS2 / NTN
+Dans ton cas (SATCOM + 5GCN NTN), l’IVV doit aussi tester :
+·	Latence élevée (600 ms RTT GEO / 40 ms LEO)
+·	GTP-U over satellite
+·	Slice Government / Defense / Civil
+·	UPF edge vs central
+·	NGAP resiliency
+
+
+
+
+
+
+
+
+
+
+
+
+ Exemple d’architecture IVV complète
+                 +----------------+
+                 |  Simulated UE  |
+                 +--------+-------+
+                          |
+                         N1
+                          |
++------------+     N2     |      N3      +------------+
+|  gNB Sim   |----------->|------------->|    UPF     |
+| (UERANSIM) |            |              |            |
++------------+            |              +------------+
+                          |
+                        +--+--+
+                        | AMF |
+                        +-----+
+
+ Scénarios IVV recommandés
+ Test 1 — Registration simple
+·	NG Setup
+·	UE attach
+·	Validation AMF logs
+ Test 2 — PDU Session
+·	Session IPv4
+·	Vérification TEID UPF
+·	Ping UE ↔ Data Network
+ Test 3 — Multi Slice
+·	S-NSSAI Civil
+·	S-NSSAI Gov
+·	S-NSSAI Defense
+·	Vérifier UPF sélectionné
+ Test 4 — Failure
+·	Kill UPF
+·	Kill AMF
+·	Restart SCTP
+·	Vérifier recovery
+ Outils complémentaires
+Outil	Usage
+Wireshark	Analyse NGAP / GTP
+tshark	Capture automatisée
+iperf3	Test débit
+TRex	Génération trafic massif
+Grafana	Monitoring KPI
+Prometheus	Metrics 5GC
+ Si tu veux aller plus loin
+Vu ton projet SATCOM + 5GCN + slicing :
+Je peux te générer :
+·	 Un setup IVV complet (Docker ou K8s)
+·	 Un simulateur multi-gNB
+·	 Un script automatisé de test (Ansible + CI/CD)
+·	 Un scénario NTN avec délai satellite injecté
+·	 Un banc IVV type opérateur IRIS2
+Dis-moi :
+ Tu veux le simulateur en Docker simple ou en Kubernetes multi-cluster pour ton 5GCN SATCOM ?
